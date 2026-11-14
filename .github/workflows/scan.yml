@@ -1,0 +1,52 @@
+name: scan
+
+on:
+  schedule:
+    - cron: "45 12 * * 0-4"   # السوق السعودي: بعد الإغلاق (3:45 عصراً بتوقيت الرياض)
+    - cron: "30 21 * * 1-5"   # السوق الأمريكي: بعد الإغلاق (12:30 ليلاً بتوقيت الرياض)
+  workflow_dispatch:
+    inputs:
+      market:
+        description: "us أو sa أو both"
+        default: "both"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Pick market
+        id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "m=${{ github.event.inputs.market }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "45 12 * * 0-4" ]; then
+            echo "m=sa" >> "$GITHUB_OUTPUT"
+          else
+            echo "m=us" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Scan Saudi
+        if: steps.pick.outputs.m == 'sa' || steps.pick.outputs.m == 'both'
+        run: python scanner.py --market sa
+      - name: Scan US
+        if: steps.pick.outputs.m == 'us' || steps.pick.outputs.m == 'both'
+        run: python scanner.py --market us
+      - name: Commit results
+        run: |
+          git config user.name "ptc-scanner"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/*.json
+          git diff --cached --quiet || git commit -m "تحديث نتائج الماسح"
+          git push
