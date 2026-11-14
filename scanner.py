@@ -243,6 +243,8 @@ def analyze(t, d, bench, float_shares=None):
     off_low = int((w - 1) - int(np.where(l[-w:] == low52)[0][-1]))
     near_low = c[-1] <= low52 * 1.10 or off_low <= 20
     res["low52"] = round(float(low52), 2)
+    res["lowAgo"] = off_low                 # كم شمعة مضت على شمعة بداية عدّ الحجم
+    res["atStart"] = bool(off_low <= 3)     # السهم عند شمعة بداية العد (قاع سنة جديد)
     res["fromLow"] = round(float((c[-1] / low52 - 1) * 100), 1)
 
     # 2) نافذة الإيقاع
@@ -353,9 +355,12 @@ def analyze(t, d, bench, float_shares=None):
 
 # ---------- التشغيل ----------
 def run(market):
+    names = {}
     if market == "sa":
-        codes = read_list(ROOT / "saudi.txt")
-        tickers = [f"{c}.SR" for c in codes]
+        for line in read_list(ROOT / "saudi.txt"):
+            code, _, nm = line.partition(" ")
+            names[f"{code}.SR"] = nm.strip()
+        tickers = list(names)
         bench_sym = "^TASI.SR"
     else:
         tickers = us_universe()
@@ -396,9 +401,13 @@ def run(market):
     results = [r for _, _, r in rows]
     for r in results:
         r["watch"] = r["t"] in watch
+        if names.get(r["t"]):
+            r["name"] = names[r["t"]]
     results.sort(key=lambda r: (r["score"], r["soon"], r["watch"]), reverse=True)
     top = [r for r in results if not r["watch"] and (r["score"] >= 2 or r["soon"])][:400]
-    keep = top + [r for r in results if r["watch"]]  # قائمة المراقبة تظهر دائماً
+    ids = {r["t"] for r in top}
+    start = [r for r in results if r["atStart"] and not r["watch"] and r["t"] not in ids]  # عند بداية عدّ الحجم تظهر دائماً
+    keep = top + start + [r for r in results if r["watch"]]  # قائمة المراقبة تظهر دائماً
     keep.sort(key=lambda r: (r["score"], r["soon"], r["watch"]), reverse=True)
     print("الأسهم الحرة متوفرة لـ", sum(1 for r in results if r.get("ftPct") is not None), "سهم")
 
