@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ماسح الزمن والسعر</title>
+<meta name="theme-color" content="#0b0f19">
+<link rel="manifest" href="manifest.json">
+<style>
+:root{
+  --bg:#f6f7f9;--panel:#ffffff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
+  --pos:#15803d;--pos-bg:#dcfce7;--neg:#b91c1c;--neg-bg:#fee2e2;--gold:#a16207;--gold-bg:#fef9c3;
+  --info:#1d4ed8;--info-bg:#dbeafe;--accent:#0f766e;--chip:#f1f5f9;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0b0f19;--panel:#111827;--ink:#e5e7eb;--muted:#94a3b8;--line:#1f2937;
+  --pos:#4ade80;--pos-bg:#052e16;--neg:#f87171;--neg-bg:#3f0d0d;--gold:#facc15;--gold-bg:#3a2e05;
+  --info:#93c5fd;--info-bg:#0c1f3f;--accent:#2dd4bf;--chip:#1f2937;
+}}
+:root[data-theme="dark"]{
+  --bg:#0b0f19;--panel:#111827;--ink:#e5e7eb;--muted:#94a3b8;--line:#1f2937;
+  --pos:#4ade80;--pos-bg:#052e16;--neg:#f87171;--neg-bg:#3f0d0d;--gold:#facc15;--gold-bg:#3a2e05;
+  --info:#93c5fd;--info-bg:#0c1f3f;--accent:#2dd4bf;--chip:#1f2937;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px}
+h1{font-size:18px;margin:0 0 2px}
+.sub{color:var(--muted);font-size:12.5px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.tabs{display:flex;background:var(--chip);border-radius:10px;padding:3px}
+.tabs button{border:0;background:none;color:var(--muted);padding:6px 14px;border-radius:8px;font:inherit;cursor:pointer}
+.tabs button.on{background:var(--panel);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+select,input{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+input{width:120px}
+main{padding:12px 16px 40px;max-width:1100px;margin:0 auto}
+.meta{color:var(--muted);font-size:12.5px;margin:4px 0 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.card.w{border-color:var(--accent)}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.tk{font-weight:700;font-size:17px;color:var(--ink);text-decoration:none}
+.tk:hover{text-decoration:underline}
+.px{font-variant-numeric:tabular-nums}
+.up{color:var(--pos)}.dn{color:var(--neg)}
+.score{display:flex;gap:3px;align-items:center;margin:8px 0 6px}
+.dot{width:16px;height:6px;border-radius:3px;background:var(--line)}
+.dot.f{background:var(--accent)}
+.score b{margin-inline-start:6px;font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0 8px}
+.chip{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--muted)}
+.chip.on{background:var(--pos-bg);color:var(--pos)}
+.chip.soon{background:var(--gold-bg);color:var(--gold)}
+dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;font-size:13px}
+dt{color:var(--muted)}dd{margin:0;font-variant-numeric:tabular-nums}
+.empty{color:var(--muted);text-align:center;padding:40px 0}
+.note{color:var(--muted);font-size:12px;margin-top:24px;line-height:1.7}
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+@media (max-width:420px){.grid{grid-template-columns:1fr}input{width:100px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>ماسح توافق الزمن والسعر</h1>
+  <div class="sub">الزمن يحدد "متى"، والسعر يحدد "أين"، والحجم يؤكد "الآن". أداة مساعدة وليست توصية.</div>
+  <div class="bar">
+    <div class="tabs" role="tablist">
+      <button id="t-us" class="on" data-m="us">أمريكي</button>
+      <button id="t-sa" data-m="sa">سعودي</button>
+    </div>
+    <select id="minScore" aria-label="أقل درجة">
+      <option value="0">كل الدرجات</option>
+      <option value="2">2 فأكثر</option>
+      <option value="3" selected>3 فأكثر</option>
+      <option value="4">4 فأكثر</option>
+    </select>
+    <select id="view" aria-label="العرض">
+      <option value="all">الكل</option>
+      <option value="soon">نافذة قادمة</option>
+      <option value="trig">انفجار حجم اليوم</option>
+      <option value="watch">قائمة المراقبة</option>
+      <option value="rhythm">الإيقاع يتفوق على الصدفة</option>
+    </select>
+    <input id="q" placeholder="بحث عن رمز" aria-label="بحث">
+  </div>
+</header>
+<main>
+  <div class="meta" id="meta">جارٍ التحميل…</div>
+  <div class="grid" id="grid"></div>
+  <div class="note">
+    <b>الشروط الستة:</b> قرب قاع السنة (بداية عدّ الحجم) · نافذة إيقاع القيعان · نافذة فيبو الزمني · دورة الأسهم الحرة خلال 3 أيام · السعر عند دعم (فيبو، EMA، قاع سابق، سيولة) · انفجار حجم 1.5x بشمعة خضراء.<br>
+    <b>دقة الإيقاع:</b> كم قاعاً سابقاً جاء داخل النافذة المتوقعة، مقارنة بالصدفة. إذا لم تتفوق على الصدفة فلا تعتمد على الزمن في هذا السهم.<br>
+    التواريخ تقريبية. البيانات من Yahoo Finance وقد تتأخر أو تنقص. افتح السهم على TradingView بمؤشري BH وPTC قبل أي قرار.
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const cache = {};
+let market = "us";
+try { const m = localStorage.getItem("ptc-m"); if (m) market = m; } catch(e){}
+
+function tvLink(t){
+  if (t.endsWith(".SR")) return "https://www.tradingview.com/chart/?symbol=TADAWUL:" + t.replace(".SR","");
+  return "https://www.tradingview.com/chart/?symbol=" + encodeURIComponent(t.replace("-", "."));
+}
+function fmt(x, d=2){ return x == null ? "—" : Number(x).toFixed(d); }
+function pct(p, ref){ return p == null ? "" : ((p/ref-1)*100 >= 0 ? "+" : "") + ((p/ref-1)*100).toFixed(1) + "%"; }
+
+async function load(m){
+  if (cache[m]) return cache[m];
+  const r = await fetch(m + ".json?v=" + Date.now());
+  if (!r.ok) throw new Error("no data");
+  cache[m] = await r.json();
+  return cache[m];
+}
+
+function card(r){
+  const chips = [
+    ["قاع السنة", r.nearLow], ["إيقاع", r.inLo], ["فيبو زمني" + (r.fibR ? " " + r.fibR : ""), r.inFib],
+    ["دورة الأسهم", r.inFt], ["عند دعم", r.atSup], ["انفجار حجم", r.trig]
+  ].map(([n,on]) => `<span class="chip ${on?"on":""}">${on?"✔ ":""}${n}</span>`).join("")
+    + (r.soon ? `<span class="chip soon">⏳ نافذة قادمة</span>` : "")
+    + (r.watch ? `<span class="chip soon">★ مراقبة</span>` : "");
+  const dots = Array.from({length:6}, (_,i) => `<span class="dot ${i<r.score?"f":""}"></span>`).join("");
+  const rhP = r.rhN ? Math.round(r.rhHit*100/r.rhN) : null;
+  const rhCls = rhP == null ? "" : (rhP >= r.rhChance*1.5 ? "up" : rhP < r.rhChance ? "dn" : "");
+  return `<article class="card ${r.watch?"w":""}">
+    <div class="top">
+      <a class="tk" href="${tvLink(r.t)}" target="_blank" rel="noopener">${r.t.replace(".SR","")}</a>
+      <span class="px">${fmt(r.price)} <span class="${r.chg>=0?"up":"dn"}">${r.chg>=0?"+":""}${fmt(r.chg)}%</span></span>
+    </div>
+    <div class="score">${dots}<b>${r.score}/6</b></div>
+    <div class="chips">${chips}</div>
+    <dl>
+      <dt>القاع القادم</dt><dd>${r.loWin ?? "—"}${r.rhythm ? " · إيقاع ~" + r.rhythm + " شمعة" : ""}</dd>
+      <dt>دورة الأسهم</dt><dd>${r.ftBars != null ? "بعد ~" + r.ftBars + " شمعة (" + r.ftPct + "%)" : "—"}</dd>
+      <dt>دعم</dt><dd>${r.sup != null ? fmt(r.sup) + " · " + r.supNm : "—"}</dd>
+      <dt>هدف السيولة ↑</dt><dd class="up">${r.up != null ? fmt(r.up) + "  " + pct(r.up, r.price) + (r.upWeak?" (أضعف)":"") : "لا عقدة فوق السعر"}</dd>
+      <dt>هدف السيولة ↓</dt><dd style="color:var(--info)">${r.dn != null ? fmt(r.dn) + "  " + pct(r.dn, r.price) + (r.dnWeak?" (أضعف)":"") : "قاع جديد"}</dd>
+      <dt>قوة نسبية</dt><dd class="${r.rs>=0?"up":"dn"}">${r.rs != null ? (r.rs>=0?"+":"") + fmt(r.rs,1) + "%" : "—"}</dd>
+      <dt>انكماش · حجم</dt><dd>${fmt(r.tight,1)}% · ${fmt(r.vr)}x</dd>
+      <dt>من قاع السنة</dt><dd>+${fmt(r.fromLow,1)}%</dd>
+      <dt>دقة الإيقاع</dt><dd class="${rhCls}">${rhP == null ? "—" : r.rhHit + " من " + r.rhN + " (" + rhP + "%) · الصدفة ~" + r.rhChance + "%"}</dd>
+    </dl>
+  </article>`;
+}
+
+async function render(){
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.m === market));
+  const grid = $("#grid");
+  let data;
+  try { data = await load(market); }
+  catch(e){ $("#meta").textContent = "لا توجد نتائج بعد لهذا السوق. شغّل الماسح من GitHub Actions."; grid.innerHTML = ""; return; }
+  const min = +$("#minScore").value, view = $("#view").value, q = $("#q").value.trim().toUpperCase();
+  let rows = data.rows.filter(r => r.score >= min || (view === "watch" && r.watch) || (view === "soon" && r.soon));
+  if (view === "soon") rows = rows.filter(r => r.soon);
+  if (view === "trig") rows = rows.filter(r => r.trig);
+  if (view === "watch") rows = data.rows.filter(r => r.watch);
+  if (view === "rhythm") rows = rows.filter(r => r.rhN >= 5 && r.rhHit*100/r.rhN >= r.rhChance*1.5);
+  if (q) rows = data.rows.filter(r => r.t.toUpperCase().includes(q));
+  $("#meta").textContent = `آخر تحديث: ${data.updated} · تم تحليل ${data.scanned} سهماً · المعروض ${rows.length}`;
+  grid.innerHTML = rows.length ? rows.map(card).join("") : `<div class="empty">لا توجد أسهم بهذه الشروط</div>`;
+}
+
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  market = b.dataset.m; try { localStorage.setItem("ptc-m", market); } catch(e){}
+  render();
+});
+["#minScore","#view"].forEach(s => $(s).onchange = render);
+$("#q").oninput = render;
+render();
+</script>
+</body>
+</html>
