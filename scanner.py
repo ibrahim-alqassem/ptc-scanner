@@ -38,6 +38,7 @@ MIN_PRICE = 5.0
 MIN_AVGVOL = {"us": 500_000, "sa": 100_000}   # السوق السعودي أحجامه بالأسهم أقل
 FLOAT_TOP = 50     # جلب الأسهم الحرة لأفضل N نتيجة فقط
 UPCOMING = 5       # نافذة تبدأ خلال N شموع = "قادمة"
+WEEKMASK = "Mon Tue Wed Thu Fri"   # أيام التداول (السعودي: الأحد–الخميس)
 
 
 # ---------- قوائم الأسهم ----------
@@ -326,10 +327,9 @@ def analyze(t, d, bench, float_shares=None):
 
     score = int(near_low) + int(in_lo) + int(in_fib) + int(in_ft) + int(at_sup) + int(trig)
     dt = d.index[-1]
-    bar_days = 1.45  # متوسط أيام التقويم لكل شمعة يومية تقريباً
-
-    def date_at(bars):
-        return (dt + timedelta(days=bars * bar_days)).strftime("%d %b")
+    def date_at(bars):  # بعد N يوم تداول، مع تخطي عطلة نهاية الأسبوع
+        d0 = np.datetime64(dt.date(), "D")
+        return pd.Timestamp(np.busday_offset(d0, int(round(bars)), roll="forward", weekmask=WEEKMASK)).strftime("%d %b")
 
     res.update({
         "score": score,
@@ -356,6 +356,8 @@ def analyze(t, d, bench, float_shares=None):
 
 # ---------- التشغيل ----------
 def run(market):
+    global WEEKMASK
+    WEEKMASK = "Sun Mon Tue Wed Thu" if market == "sa" else "Mon Tue Wed Thu Fri"
     names = {}
     if market == "sa":
         for line in read_list(ROOT / "saudi.txt"):
