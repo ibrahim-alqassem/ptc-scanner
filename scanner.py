@@ -341,6 +341,7 @@ def analyze(t, d, bench, float_shares=None):
         "rhythm": None if m_lo is None else round(m_lo),
         "hiWin": None if c_hi is None else date_at(c_hi - cur),
         "ftBars": ft_bars, "ftPct": None if ft_pct is None else round(ft_pct),
+        "ftDate": None if ft_bars is None else date_at(ft_bars),
         "sup": None if sup is None else round(float(sup), 2), "supNm": " + ".join(sup_nm),
         "up": None if tgt_up is None else round(float(tgt_up), 2), "upWeak": upw,
         "dn": None if tgt_dn is None else round(float(tgt_dn), 2), "dnWeak": dnw,
@@ -390,7 +391,7 @@ def run(market):
     # الأسهم الحرة لأفضل النتائج + قائمة المراقبة
     rows.sort(key=lambda x: (x[2]["score"], x[2]["soon"]), reverse=True)
     for i, (t, d, r) in enumerate(rows):
-        if i < FLOAT_TOP or t in watch:
+        if i < FLOAT_TOP or t in watch or r["atStart"]:  # بداية العد تحتاج دورة الأسهم
             fs = get_float(t)
             if fs:
                 try:
