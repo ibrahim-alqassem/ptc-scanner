@@ -34,7 +34,8 @@ VP_LEN, VP_BINS, HVN_MULT = 120, 40, 1.3
 RS_LEN = 63
 TIGHT_LEN, TIGHT_PCT = 10, 10.0
 FT_LEN = 252
-MIN_PRICE, MIN_AVGVOL = 5.0, 500_000
+MIN_PRICE = 5.0
+MIN_AVGVOL = {"us": 500_000, "sa": 100_000}   # السوق السعودي أحجامه بالأسهم أقل
 FLOAT_TOP = 50     # جلب الأسهم الحرة لأفضل N نتيجة فقط
 UPCOMING = 5       # نافذة تبدأ خلال N شموع = "قادمة"
 
@@ -268,6 +269,8 @@ def analyze(t, d, bench, float_shares=None):
         mult = math.floor(ft_pct / 100) + 1
         ft_bars = math.ceil((mult * float_shares - cum) / vavg20) if vavg20 > 0 else None
         in_ft = ft_bars is not None and ft_bars <= 3
+        if ft_bars is not None and ft_bars > 252:
+            ft_bars = None  # أبعد من سنة
 
     # 5) السعر عند دعم
     tgt_up, tgt_dn, upw, dnw, nodes = liquidity_targets(h, l, c, v)
@@ -299,7 +302,10 @@ def analyze(t, d, bench, float_shares=None):
 
     # إضافات
     rs = None
-    if bench is not None and len(bench) > RS_LEN:
+    if isinstance(bench, float):  # مرجع بديل: متوسط أداء أسهم السوق نفسه
+        k = min(RS_LEN, n - 1)
+        rs = (c[-1] / c[-1 - k] - 1) - bench
+    elif bench is not None and len(bench) > RS_LEN:
         b = bench.reindex(d.index).ffill().values
         k = min(RS_LEN, n - 1)
         if b[-1 - k] and b[-1]:
@@ -353,11 +359,15 @@ def run(market):
     data = download(tickers + [bench_sym])
     bench = data.pop(bench_sym, None)
     bench = bench["Close"] if bench is not None else None
+    if bench is None or len(bench) <= RS_LEN:
+        rets = [d["Close"].iloc[-1] / d["Close"].iloc[-1 - min(RS_LEN, len(d) - 1)] - 1 for d in data.values() if len(d) > 2]
+        bench = float(np.median(rets)) if rets else None
+        print("المؤشر المرجعي غير متوفر، استخدام وسيط أداء السوق:", bench)
 
     rows = []
     for t, d in data.items():
         try:
-            liquid = d["Close"].iloc[-1] >= MIN_PRICE and d["Volume"].iloc[-20:].mean() >= MIN_AVGVOL
+            liquid = d["Close"].iloc[-1] >= MIN_PRICE and d["Volume"].iloc[-20:].mean() >= MIN_AVGVOL[market]
             if not liquid and t not in watch:
                 continue
             rows.append((t, d, analyze(t, d, bench)))
