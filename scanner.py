@@ -118,9 +118,17 @@ def download(tickers, period="2y", chunk=100):
 
 def get_float(t):
     import yfinance as yf
-    try:
-        info = yf.Ticker(t).get_info()
-        return info.get("floatShares") or info.get("sharesOutstanding")
+    tk = yf.Ticker(t)
+    for attempt in range(2):
+        try:
+            info = tk.get_info()
+            v = info.get("floatShares") or info.get("sharesOutstanding")
+            if v:
+                return v
+        except Exception:
+            time.sleep(2 * (attempt + 1))
+    try:  # بديل أخف: عدد الأسهم القائمة
+        return tk.fast_info.get("shares")
     except Exception:
         return None
 
@@ -389,7 +397,10 @@ def run(market):
     for r in results:
         r["watch"] = r["t"] in watch
     results.sort(key=lambda r: (r["score"], r["soon"], r["watch"]), reverse=True)
-    keep = [r for r in results if r["score"] >= 2 or r["soon"] or r["watch"]][:400]
+    top = [r for r in results if not r["watch"] and (r["score"] >= 2 or r["soon"])][:400]
+    keep = top + [r for r in results if r["watch"]]  # قائمة المراقبة تظهر دائماً
+    keep.sort(key=lambda r: (r["score"], r["soon"], r["watch"]), reverse=True)
+    print("الأسهم الحرة متوفرة لـ", sum(1 for r in results if r.get("ftPct") is not None), "سهم")
 
     out = {
         "market": market,
