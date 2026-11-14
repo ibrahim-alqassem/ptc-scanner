@@ -41,6 +41,7 @@ main{padding:12px 16px 40px;max-width:1100px;margin:0 auto}
 .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .tk{font-weight:700;font-size:17px;color:var(--ink);text-decoration:none}
 .tk:hover{text-decoration:underline}
+.code{color:var(--muted);font-size:12px;font-weight:400;margin-inline-start:6px}
 .px{font-variant-numeric:tabular-nums}
 .up{color:var(--pos)}.dn{color:var(--neg)}
 .score{display:flex;gap:3px;align-items:center;margin:8px 0 6px}
@@ -76,18 +77,20 @@ dt{color:var(--muted)}dd{margin:0;font-variant-numeric:tabular-nums}
     </select>
     <select id="view" aria-label="العرض">
       <option value="all">الكل</option>
+      <option value="start">عند بداية عدّ الحجم</option>
       <option value="soon">نافذة قادمة</option>
       <option value="trig">انفجار حجم اليوم</option>
       <option value="watch">قائمة المراقبة</option>
       <option value="rhythm">الإيقاع يتفوق على الصدفة</option>
     </select>
-    <input id="q" placeholder="بحث عن رمز" aria-label="بحث">
+    <input id="q" placeholder="بحث برمز أو اسم" aria-label="بحث">
   </div>
 </header>
 <main>
   <div class="meta" id="meta">جارٍ التحميل…</div>
   <div class="grid" id="grid"></div>
   <div class="note">
+    <b>عند بداية عدّ الحجم:</b> السهم صنع أدنى سعر في سنة خلال آخر 3 شموع، أي أنه عند شمعة بداية العد في المؤشر. هذه قائمة مراقبة وليست إشارة شراء.<br>
     <b>الشروط الستة:</b> قرب قاع السنة (بداية عدّ الحجم) · نافذة إيقاع القيعان · نافذة فيبو الزمني · دورة الأسهم الحرة خلال 3 أيام · السعر عند دعم (فيبو، EMA، قاع سابق، سيولة) · انفجار حجم 1.5x بشمعة خضراء.<br>
     <b>دقة الإيقاع:</b> كم قاعاً سابقاً جاء داخل النافذة المتوقعة، مقارنة بالصدفة. إذا لم تتفوق على الصدفة فلا تعتمد على الزمن في هذا السهم.<br>
     التواريخ تقريبية. البيانات من Yahoo Finance وقد تتأخر أو تنقص. افتح السهم على TradingView بمؤشري BH وPTC قبل أي قرار.
@@ -119,6 +122,7 @@ function card(r){
     ["قاع السنة", r.nearLow], ["إيقاع", r.inLo], ["فيبو زمني" + (r.fibR ? " " + r.fibR : ""), r.inFib],
     ["دورة الأسهم", r.inFt], ["عند دعم", r.atSup], ["انفجار حجم", r.trig]
   ].map(([n,on]) => `<span class="chip ${on?"on":""}">${on?"✔ ":""}${n}</span>`).join("")
+    + (r.atStart ? `<span class="chip soon">📍 عند بداية العد</span>` : "")
     + (r.soon ? `<span class="chip soon">⏳ نافذة قادمة</span>` : "")
     + (r.watch ? `<span class="chip soon">★ مراقبة</span>` : "");
   const dots = Array.from({length:6}, (_,i) => `<span class="dot ${i<r.score?"f":""}"></span>`).join("");
@@ -126,7 +130,7 @@ function card(r){
   const rhCls = rhP == null ? "" : (rhP >= r.rhChance*1.5 ? "up" : rhP < r.rhChance ? "dn" : "");
   return `<article class="card ${r.watch?"w":""}">
     <div class="top">
-      <a class="tk" href="${tvLink(r.t)}" target="_blank" rel="noopener">${r.t.replace(".SR","")}</a>
+      <a class="tk" href="${tvLink(r.t)}" target="_blank" rel="noopener">${r.name || r.t.replace(".SR","")}${r.name ? `<span class="code">${r.t.replace(".SR","")}</span>` : ""}</a>
       <span class="px">${fmt(r.price)} <span class="${r.chg>=0?"up":"dn"}">${r.chg>=0?"+":""}${fmt(r.chg)}%</span></span>
     </div>
     <div class="score">${dots}<b>${r.score}/6</b></div>
@@ -139,7 +143,7 @@ function card(r){
       <dt>هدف السيولة ↓</dt><dd style="color:var(--info)">${r.dn != null ? fmt(r.dn) + "  " + pct(r.dn, r.price) + (r.dnWeak?" (أضعف)":"") : "قاع جديد"}</dd>
       <dt>قوة نسبية</dt><dd class="${r.rs>=0?"up":"dn"}">${r.rs != null ? (r.rs>=0?"+":"") + fmt(r.rs,1) + "%" : "—"}</dd>
       <dt>انكماش · حجم</dt><dd>${fmt(r.tight,1)}% · ${fmt(r.vr)}x</dd>
-      <dt>من قاع السنة</dt><dd>+${fmt(r.fromLow,1)}%</dd>
+      <dt>بداية عدّ الحجم</dt><dd>${r.lowAgo == null ? "—" : (r.lowAgo === 0 ? "اليوم" : "قبل " + r.lowAgo + " شمعة")} · ${fmt(r.low52)} (+${fmt(r.fromLow,1)}%)</dd>
       <dt>دقة الإيقاع</dt><dd class="${rhCls}">${rhP == null ? "—" : r.rhHit + " من " + r.rhN + " (" + rhP + "%) · الصدفة ~" + r.rhChance + "%"}</dd>
     </dl>
   </article>`;
@@ -152,12 +156,13 @@ async function render(){
   try { data = await load(market); }
   catch(e){ $("#meta").textContent = "لا توجد نتائج بعد لهذا السوق. شغّل الماسح من GitHub Actions."; grid.innerHTML = ""; return; }
   const min = +$("#minScore").value, view = $("#view").value, q = $("#q").value.trim().toUpperCase();
-  let rows = data.rows.filter(r => r.score >= min || (view === "watch" && r.watch) || (view === "soon" && r.soon));
+  let rows = data.rows.filter(r => r.score >= min || (view === "watch" && r.watch) || (view === "soon" && r.soon) || (view === "start" && r.atStart));
+  if (view === "start") rows = rows.filter(r => r.atStart).sort((a,b) => a.lowAgo - b.lowAgo || b.score - a.score);
   if (view === "soon") rows = rows.filter(r => r.soon);
   if (view === "trig") rows = rows.filter(r => r.trig);
   if (view === "watch") rows = data.rows.filter(r => r.watch);
   if (view === "rhythm") rows = rows.filter(r => r.rhN >= 5 && r.rhHit*100/r.rhN >= r.rhChance*1.5);
-  if (q) rows = data.rows.filter(r => r.t.toUpperCase().includes(q));
+  if (q) rows = data.rows.filter(r => r.t.toUpperCase().includes(q) || (r.name || "").includes($("#q").value.trim()));
   $("#meta").textContent = `آخر تحديث: ${data.updated} · تم تحليل ${data.scanned} سهماً · المعروض ${rows.length}`;
   grid.innerHTML = rows.length ? rows.map(card).join("") : `<div class="empty">لا توجد أسهم بهذه الشروط</div>`;
 }
