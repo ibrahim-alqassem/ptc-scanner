@@ -141,6 +141,31 @@ def get_float(t):
         return None, None
 
 
+def tv_floats(market):
+    """الأسهم الحرة من TradingView نفسه (نفس رقم المؤشر على الشارت) بطلب واحد لكل السوق."""
+    url = "https://scanner.tradingview.com/" + ("ksa" if market == "sa" else "america") + "/scan"
+    ex = ["TADAWUL"] if market == "sa" else ["NASDAQ", "NYSE", "AMEX"]
+    body = {"columns": ["name", "float_shares_outstanding"], "range": [0, 20000],
+            "filter": [{"left": "exchange", "operation": "in_range", "right": ex}]}
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                         headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = json.loads(r.read().decode())["data"]
+            out = {}
+            for row in data:
+                name, fl = row["d"][0], row["d"][1]
+                if fl:
+                    out[f"{name}.SR" if market == "sa" else name.replace(".", "-")] = float(fl)
+            print("الأسهم الحرة من TradingView:", len(out))
+            return out
+        except Exception as e:  # noqa
+            print("تعذر جلب الأسهم الحرة من TradingView:", e)
+            time.sleep(5 * (attempt + 1))
+    return {}
+
+
 # ---------- التحليل ----------
 def pivots(arr, is_low):
     idx = []
@@ -406,17 +431,22 @@ def run(market):
         except Exception as e:  # noqa
             print("خطأ في", t, e)
 
-    # الأسهم الحرة لأفضل النتائج + قائمة المراقبة
+    # الأسهم الحرة: من TradingView لكل الأسهم (مطابقة للمؤشر)، وياهو احتياطاً فقط إذا تعذر TradingView
     rows.sort(key=lambda x: (x[2]["score"], x[2]["soon"]), reverse=True)
+    tvf = tv_floats(market)
     for i, (t, d, r) in enumerate(rows):
-        if i < FLOAT_TOP or t in watch or r["atStart"]:  # بداية العد تحتاج دورة الأسهم
+        if tvf:
+            fs, src = tvf.get(t), "tv"
+        elif i < FLOAT_TOP or t in watch or r["atStart"]:
             fs, src = get_float(t)
-            if fs:
-                try:
-                    rows[i] = (t, d, analyze(t, d, bench, fs, src))
-                except Exception:
-                    pass
             time.sleep(0.4)
+        else:
+            fs = None
+        if fs:
+            try:
+                rows[i] = (t, d, analyze(t, d, bench, fs, src))
+            except Exception:
+                pass
     results = [r for _, _, r in rows]
     for r in results:
         r["watch"] = r["t"] in watch
@@ -428,7 +458,7 @@ def run(market):
     start = [r for r in results if r["atStart"] and not r["watch"] and r["t"] not in ids]  # عند بداية عدّ الحجم تظهر دائماً
     keep = top + start + [r for r in results if r["watch"]]  # قائمة المراقبة تظهر دائماً
     keep.sort(key=lambda r: (r["score"], r["soon"], r["watch"]), reverse=True)
-    print("الأسهم الحرة متوفرة لـ", sum(1 for r in results if r.get("ftSrc") == "float"), "سهم، وتقريبية (القائمة) لـ",
+    print("الأسهم الحرة متوفرة لـ", sum(1 for r in results if r.get("ftSrc") in ("tv", "float")), "سهم، وتقريبية (القائمة) لـ",
           sum(1 for r in results if r.get("ftSrc") == "out"))
 
     out = {
