@@ -95,7 +95,7 @@ def download(tickers, period="2y", chunk=100):
         part = tickers[k:k + chunk]
         for attempt in range(3):
             try:
-                df = yf.download(part, period=period, interval="1d", auto_adjust=False, group_by="ticker",
+                df = yf.download(part, period=period, interval="1d", auto_adjust=True, group_by="ticker",
                                  threads=True, progress=False)
                 break
             except Exception as e:  # noqa
