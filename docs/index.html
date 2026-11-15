@@ -128,6 +128,14 @@ async function load(m){
   return cache[m];
 }
 
+function ftTxt(r){
+  if (r.ftPct == null) return "الأسهم الحرة غير متوفرة";
+  let t = r.ftBars != null ? (r.ftDate || "") + " · بعد ~" + r.ftBars + " يوم تداول (" + r.ftPct + "%)" : "أبعد من سنة (" + r.ftPct + "%)";
+  if (r.ftSince != null && r.ftSince <= 5) t += " · ✔ عبر " + Math.floor(r.ftPct/100)*100 + "% " + (r.ftSince === 0 ? "اليوم" : "قبل " + r.ftSince + " شمعة");
+  if (r.ftFloat != null) t += r.ftSrc === "out" ? " · ⚠ تقريبي (القائمة " + r.ftFloat + "M)" : " · الحرة " + r.ftFloat + "M";
+  return t;
+}
+
 function card(r){
   const chips = [
     ["قاع السنة", r.nearLow], ["إيقاع", r.inLo], ["فيبو زمني" + (r.fibR ? " " + r.fibR : ""), r.inFib],
@@ -148,7 +156,7 @@ function card(r){
     <div class="chips">${chips}</div>
     <dl>
       <dt>القاع القادم</dt><dd>${r.loWin ?? "—"}${r.rhythm ? " · إيقاع ~" + r.rhythm + " شمعة" : ""}</dd>
-      <dt>دورة الأسهم</dt><dd>${r.ftBars != null ? (r.ftDate || "") + " · بعد ~" + r.ftBars + " يوم تداول (" + r.ftPct + "%)" : (r.ftPct != null ? "أبعد من سنة (" + r.ftPct + "%)" : "—")}</dd>
+      <dt>دورة الأسهم</dt><dd>${ftTxt(r)}</dd>
       <dt>دعم</dt><dd>${r.sup != null ? fmt(r.sup) + " · " + r.supNm : "—"}</dd>
       <dt>هدف السيولة ↑</dt><dd class="up">${r.up != null ? fmt(r.up) + "  " + pct(r.up, r.price) + (r.upWeak?" (أضعف)":"") : "لا عقدة فوق السعر"}</dd>
       <dt>هدف السيولة ↓</dt><dd style="color:var(--info)">${r.dn != null ? fmt(r.dn) + "  " + pct(r.dn, r.price) + (r.dnWeak?" (أضعف)":"") : "قاع جديد"}</dd>
@@ -167,7 +175,7 @@ async function render(){
   try { data = await load(market); }
   catch(e){ $("#meta").textContent = "لا توجد نتائج بعد لهذا السوق. شغّل الماسح من GitHub Actions."; grid.innerHTML = ""; return; }
   const min = +$("#minScore").value, view = $("#view").value, q = $("#q").value.trim().toUpperCase();
-  const cyc5 = r => r.ftBars != null && r.ftBars <= 5;
+  const cyc5 = r => r.ftSrc !== "out" && r.ftBars != null && r.ftBars <= 5;  // الأسهم الحرة الحقيقية فقط
   let rows = data.rows.filter(r => r.score >= min || (view === "watch" && r.watch) || (view === "soon" && r.soon) || (view === "start" && r.atStart) || (view === "startcyc" && r.atStart && cyc5(r)) || (view === "cyc" && cyc5(r)));
   if (view === "startcyc") rows = rows.filter(r => r.atStart && cyc5(r));
   if (view === "cyc") rows = rows.filter(cyc5);
