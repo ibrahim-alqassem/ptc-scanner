@@ -118,20 +118,27 @@ def download(tickers, period="2y", chunk=100):
 
 
 def get_float(t):
+    """يرجع (العدد, المصدر): float = الأسهم الحرة الحقيقية، out = الأسهم القائمة (تقريبي)."""
     import yfinance as yf
     tk = yf.Ticker(t)
-    for attempt in range(2):
+    out = None
+    for attempt in range(3):
         try:
             info = tk.get_info()
-            v = info.get("floatShares") or info.get("sharesOutstanding")
-            if v:
-                return v
+            if info.get("floatShares"):
+                return info["floatShares"], "float"
+            out = out or info.get("sharesOutstanding")
+            if info:
+                break
         except Exception:
-            time.sleep(2 * (attempt + 1))
+            time.sleep(3 * (attempt + 1))
+    if out:
+        return out, "out"
     try:  # بديل أخف: عدد الأسهم القائمة
-        return tk.fast_info.get("shares")
+        v = tk.fast_info.get("shares")
+        return (v, "out") if v else (None, None)
     except Exception:
-        return None
+        return None, None
 
 
 # ---------- التحليل ----------
@@ -224,7 +231,7 @@ def liquidity_targets(h, l, c, v):
     return up, dn, upw, dnw, nodes
 
 
-def analyze(t, d, bench, float_shares=None):
+def analyze(t, d, bench, float_shares=None, float_src=None):
     o, h, l, c, v = (d[k].values for k in ["Open", "High", "Low", "Close", "Volume"])
     n = len(c)
     cur = n - 1
@@ -269,17 +276,23 @@ def analyze(t, d, bench, float_shares=None):
                     soon_fib = True
 
     # 4) دورة الأسهم الحرة
-    ft_bars, ft_pct, in_ft = None, None, False
+    ft_bars, ft_pct, in_ft, ft_since = None, None, False, None
     if float_shares:
-        start = w - 1 - (int(np.where(l[-w:] == low52)[0][-1]))
+        # نفس منطق المؤشر: عند التساوي نأخذ الأقدم (مثل <= و >= في Pine)
+        start = w - 1 - int(np.where(l[-w:] == low52)[0][0])
         if start < 10:  # القاع حديث: العد من القمة
             hi52 = h[-w:].max()
-            start = w - 1 - int(np.where(h[-w:] == hi52)[0][-1])
-        cum = v[-(start + 1):].sum()
+            start = w - 1 - int(np.where(h[-w:] == hi52)[0][0])
+        seg = v[-(start + 1):]
+        cums = np.cumsum(seg)
+        cum = cums[-1]
         ft_pct = cum / float_shares * 100
         mult = math.floor(ft_pct / 100) + 1
         ft_bars = math.ceil((mult * float_shares - cum) / vavg20) if vavg20 > 0 else None
-        in_ft = ft_bars is not None and ft_bars <= 3
+        if mult >= 2:  # كم شمعة مضت على عبور آخر مضاعف (100%، 200%...)
+            k = (mult - 1) * float_shares
+            ft_since = int(len(cums) - 1 - int(np.argmax(cums >= k)))
+        in_ft = (ft_bars is not None and ft_bars <= 3) or (ft_since is not None and ft_since <= 3)
         if ft_bars is not None and ft_bars > 252:
             ft_bars = None  # أبعد من سنة
 
@@ -342,6 +355,9 @@ def analyze(t, d, bench, float_shares=None):
         "hiWin": None if c_hi is None else date_at(c_hi - cur),
         "ftBars": ft_bars, "ftPct": None if ft_pct is None else round(ft_pct),
         "ftDate": None if ft_bars is None else date_at(ft_bars),
+        "ftSince": ft_since,
+        "ftFloat": None if not float_shares else round(float_shares / 1e6, 1),
+        "ftSrc": float_src,
         "sup": None if sup is None else round(float(sup), 2), "supNm": " + ".join(sup_nm),
         "up": None if tgt_up is None else round(float(tgt_up), 2), "upWeak": upw,
         "dn": None if tgt_dn is None else round(float(tgt_dn), 2), "dnWeak": dnw,
@@ -394,10 +410,10 @@ def run(market):
     rows.sort(key=lambda x: (x[2]["score"], x[2]["soon"]), reverse=True)
     for i, (t, d, r) in enumerate(rows):
         if i < FLOAT_TOP or t in watch or r["atStart"]:  # بداية العد تحتاج دورة الأسهم
-            fs = get_float(t)
+            fs, src = get_float(t)
             if fs:
                 try:
-                    rows[i] = (t, d, analyze(t, d, bench, fs))
+                    rows[i] = (t, d, analyze(t, d, bench, fs, src))
                 except Exception:
                     pass
             time.sleep(0.4)
@@ -412,7 +428,8 @@ def run(market):
     start = [r for r in results if r["atStart"] and not r["watch"] and r["t"] not in ids]  # عند بداية عدّ الحجم تظهر دائماً
     keep = top + start + [r for r in results if r["watch"]]  # قائمة المراقبة تظهر دائماً
     keep.sort(key=lambda r: (r["score"], r["soon"], r["watch"]), reverse=True)
-    print("الأسهم الحرة متوفرة لـ", sum(1 for r in results if r.get("ftPct") is not None), "سهم")
+    print("الأسهم الحرة متوفرة لـ", sum(1 for r in results if r.get("ftSrc") == "float"), "سهم، وتقريبية (القائمة) لـ",
+          sum(1 for r in results if r.get("ftSrc") == "out"))
 
     out = {
         "market": market,
