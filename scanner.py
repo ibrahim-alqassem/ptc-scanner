@@ -484,7 +484,10 @@ def run(market):
     top = [r for r in results if not r["watch"] and (r["score"] >= 2 or r["soon"])][:400]
     ids = {r["t"] for r in top}
     start = [r for r in results if r["atStart"] and not r["watch"] and r["t"] not in ids]  # عند بداية عدّ الحجم تظهر دائماً
-    keep = top + start + [r for r in results if r["watch"]]  # قائمة المراقبة تظهر دائماً
+    ids |= {r["t"] for r in start}
+    near = [r for r in results if not r["watch"] and r["t"] not in ids and r.get("ftSrc") != "out"
+            and r["ftBars"] is not None and r["ftBars"] <= 8]  # دورة قريبة تظهر دائماً (لاصطياد ما قبل الانطلاق)
+    keep = top + start + near + [r for r in results if r["watch"]]  # قائمة المراقبة تظهر دائماً
     keep.sort(key=lambda r: (r["score"], r["soon"], r["watch"]), reverse=True)
     print("الأسهم الحرة متوفرة لـ", sum(1 for r in results if r.get("ftSrc") in ("tv", "float")), "سهم، وتقريبية (القائمة) لـ",
           sum(1 for r in results if r.get("ftSrc") == "out"))
@@ -504,7 +507,8 @@ def run(market):
         r["burstCyc"] = bool(r["lowBurst"] and cyc_ok)
         low.append(r)
     low.sort(key=lambda r: (r["burstCyc"], r["lowBurst"], r["score"], r["turnToday"] or 0), reverse=True)
-    low_keep = [r for r in low if r["lowBurst"] or r["atStart"] or r["score"] >= 2 or r["soon"]][:400]
+    low_keep = [r for r in low if r["lowBurst"] or r["atStart"] or r["score"] >= 2 or r["soon"]
+                or (r["ftBars"] is not None and r["ftBars"] <= 8)][:500]
     (DOCS / f"{market}_low.json").parent.mkdir(exist_ok=True)
     (DOCS / f"{market}_low.json").write_text(json.dumps({
         "market": market, "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
