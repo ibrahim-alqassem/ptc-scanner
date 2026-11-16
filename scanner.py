@@ -35,6 +35,9 @@ RS_LEN = 63
 TIGHT_LEN, TIGHT_PCT = 10, 10.0
 FT_LEN = 252
 MIN_PRICE = 5.0
+LOW_PRICE = 1.0    # تبويب "أقل من 5$": من 1 إلى 5
+LOW_AVGVOL = {"us": 100_000, "sa": 50_000}
+LOW_FLOAT = 20e6   # أسهم حرة قليلة
 MIN_AVGVOL = {"us": 500_000, "sa": 100_000}   # السوق السعودي أحجامه بالأسهم أقل
 FLOAT_TOP = 50     # جلب الأسهم الحرة لأفضل N نتيجة فقط
 UPCOMING = 5       # نافذة تبدأ خلال N شموع = "قادمة"
@@ -349,6 +352,25 @@ def analyze(t, d, bench, float_shares=None, float_src=None):
     vr = v[-1] / vavg20 if vavg20 > 0 else 0
     trig = vr >= VOL_MULT and c[-1] > o[-1] and c[-1] > c[-2]
 
+    # انفجار أسهم حرة قليلة: سهم كان هادئاً ثم تداول فجأة كل أسهمه الحرة (أو 3x حجمه)
+    turn_today = turn_prior = None
+    burst_days, low_burst = 0, False
+    if float_shares:
+        k = 0
+        while k < min(10, n - 22):
+            base_k = v[-(21 + k):-(1 + k)].mean()
+            if v[-1 - k] >= float_shares or (base_k > 0 and v[-1 - k] >= 3 * base_k):
+                k += 1
+            else:
+                break
+        burst_days = k                                   # عدد أيام الانفجار المتتالية حتى اليوم
+        base = v[-(20 + k):-k].mean() if k > 0 else v[-21:-1].mean()
+        turn_today = v[-1] / float_shares * 100
+        turn_prior = base / float_shares * 100          # متوسط التداول اليومي قبل الانفجار
+        rng = h[-1] - l[-1]
+        green_hi = c[-1] > o[-1] and rng > 0 and (h[-1] - c[-1]) / rng <= 0.3
+        low_burst = bool(float_shares < LOW_FLOAT and burst_days >= 1 and turn_prior <= 20 and green_hi)
+
     # إضافات
     rs = None
     if isinstance(bench, float):  # مرجع بديل: متوسط أداء أسهم السوق نفسه
@@ -389,6 +411,9 @@ def analyze(t, d, bench, float_shares=None, float_src=None):
         "rs": None if rs is None else round(rs * 100, 1),
         "tight": None if tight is None else round(float(tight), 1),
         "vr": round(float(vr), 2),
+        "turnToday": None if turn_today is None else round(float(turn_today)),
+        "turnPrior": None if turn_prior is None else round(float(turn_prior), 1),
+        "burstDays": burst_days, "lowBurst": low_burst,
         "rhHit": hit, "rhN": nn, "rhChance": None if chance is None else round(chance),
         "date": dt.strftime("%Y-%m-%d"),
     })
@@ -421,15 +446,18 @@ def run(market):
         bench = float(np.median(rets)) if rets else None
         print("المؤشر المرجعي غير متوفر، استخدام وسيط أداء السوق:", bench)
 
-    rows = []
+    rows, low_items = [], []
     for t, d in data.items():
         try:
-            liquid = d["Close"].iloc[-1] >= MIN_PRICE and d["Volume"].iloc[-20:].mean() >= MIN_AVGVOL[market]
-            if not liquid and t not in watch:
-                continue
-            rows.append((t, d, analyze(t, d, bench)))
+            px, av = d["Close"].iloc[-1], d["Volume"].iloc[-20:].mean()
+            liquid = px >= MIN_PRICE and av >= MIN_AVGVOL[market]
+            if liquid or t in watch:
+                rows.append((t, d, analyze(t, d, bench)))
+            elif LOW_PRICE <= px < MIN_PRICE and (av >= LOW_AVGVOL[market] or d["Volume"].iloc[-1] >= 10 * LOW_AVGVOL[market]):
+                low_items.append((t, d))
         except Exception as e:  # noqa
             print("خطأ في", t, e)
+
 
     # الأسهم الحرة: من TradingView لكل الأسهم (مطابقة للمؤشر)، وياهو احتياطاً فقط إذا تعذر TradingView
     rows.sort(key=lambda x: (x[2]["score"], x[2]["soon"]), reverse=True)
@@ -460,6 +488,28 @@ def run(market):
     keep.sort(key=lambda r: (r["score"], r["soon"], r["watch"]), reverse=True)
     print("الأسهم الحرة متوفرة لـ", sum(1 for r in results if r.get("ftSrc") in ("tv", "float")), "سهم، وتقريبية (القائمة) لـ",
           sum(1 for r in results if r.get("ftSrc") == "out"))
+
+    # ===== تبويب "أقل من 5$" =====
+    low = []
+    for t, d in low_items:
+        fs = tvf.get(t) if tvf else None
+        try:
+            r = analyze(t, d, bench, fs, "tv" if fs else None)
+        except Exception:
+            continue
+        if names.get(t):
+            r["name"] = names[t]
+        r["watch"] = False
+        cyc_ok = (r["ftBars"] is not None and 1 <= r["ftBars"] <= 5) or (r["ftSince"] is not None and r["ftSince"] <= 1)
+        r["burstCyc"] = bool(r["lowBurst"] and cyc_ok)
+        low.append(r)
+    low.sort(key=lambda r: (r["burstCyc"], r["lowBurst"], r["score"], r["turnToday"] or 0), reverse=True)
+    low_keep = [r for r in low if r["lowBurst"] or r["atStart"] or r["score"] >= 2 or r["soon"]][:400]
+    (DOCS / f"{market}_low.json").parent.mkdir(exist_ok=True)
+    (DOCS / f"{market}_low.json").write_text(json.dumps({
+        "market": market, "updated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "scanned": len(low), "rows": low_keep}, ensure_ascii=False), encoding="utf-8")
+    print(f"أقل من 5$: {len(low)} سهم، انفجار: {sum(r['lowBurst'] for r in low)}، انفجار + دورة: {sum(r['burstCyc'] for r in low)}")
 
     out = {
         "market": market,
