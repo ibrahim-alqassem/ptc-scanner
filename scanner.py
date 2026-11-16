@@ -368,7 +368,7 @@ def analyze(t, d, bench, float_shares=None, float_src=None):
         turn_today = v[-1] / float_shares * 100
         turn_prior = base / float_shares * 100          # متوسط التداول اليومي قبل الانفجار
         rng = h[-1] - l[-1]
-        green_hi = c[-1] > o[-1] and rng > 0 and (h[-1] - c[-1]) / rng <= 0.3
+        green_hi = c[-1] > o[-1] and c[-1] > c[-2] and rng > 0 and (h[-1] - c[-1]) / rng <= 0.3
         low_burst = bool(float_shares < LOW_FLOAT and burst_days >= 1 and turn_prior <= 20 and green_hi)
 
     # إضافات
