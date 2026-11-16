@@ -82,14 +82,20 @@ dt{color:var(--muted)}dd{margin:0;font-variant-numeric:tabular-nums}
     <select id="view" aria-label="العرض">
       <option value="all">الكل</option>
       <option value="start">عند بداية عدّ الحجم</option>
-      <option value="startcyc">بداية العد + دورة خلال 1–5 أيام</option>
-      <option value="cyc">دورة الأسهم خلال 1–5 أيام</option>
-      <option value="burst">🚀 انفجار أسهم حرة قليلة + دورة 1–5 أيام</option>
+      <option value="pre">🎯 قبل الانطلاق (دورة قريبة + لم ينطلق + مسافة للهدف)</option>
+      <option value="startcyc">بداية العد + دورة قريبة</option>
+      <option value="cyc">دورة الأسهم قريبة</option>
+      <option value="burst">🚀 انفجار أسهم حرة قليلة + دورة قريبة</option>
       <option value="burstAll">🚀 انفجار أسهم حرة قليلة (الكل)</option>
       <option value="soon">نافذة قادمة</option>
       <option value="trig">انفجار حجم اليوم</option>
       <option value="watch">قائمة المراقبة</option>
       <option value="rhythm">الإيقاع يتفوق على الصدفة</option>
+    </select>
+    <select id="cycR" aria-label="نطاق الدورة">
+      <option value="1-5">الدورة بعد 1–5 أيام</option>
+      <option value="3-6" selected>الدورة بعد 3–6 أيام</option>
+      <option value="1-8">الدورة بعد 1–8 أيام</option>
     </select>
     <select id="sort" aria-label="الترتيب">
       <option value="score">ترتيب: الدرجة</option>
@@ -109,7 +115,8 @@ dt{color:var(--muted)}dd{margin:0;font-variant-numeric:tabular-nums}
     <b>دورة الأسهم:</b> التاريخ المتوقع لاكتمال تداول ما يعادل الأسهم الحرة مرة أخرى منذ بداية العد. تقريبي، ويتقدم إذا ارتفع الحجم.<br>
     <b>عند بداية عدّ الحجم:</b> السهم صنع أدنى سعر في سنة خلال آخر 3 شموع، أي أنه عند شمعة بداية العد في المؤشر. هذه قائمة مراقبة وليست إشارة شراء.<br>
     <b>الشروط الستة:</b> قرب قاع السنة (بداية عدّ الحجم) · نافذة إيقاع القيعان · نافذة فيبو الزمني · دورة الأسهم الحرة خلال 3 أيام · السعر عند دعم (فيبو، EMA، قاع سابق، سيولة) · انفجار حجم 1.5x بشمعة خضراء.<br>
-    <b>🚀 انفجار أسهم حرة قليلة (تبويب أقل من 5$):</b> أسهم حرة أقل من 20 مليون، وكان السهم هادئاً (يتداول ≤20% من أسهمه الحرة يومياً)، ثم تداول اليوم كل أسهمه الحرة أو 3 أضعاف حجمه، بشمعة خضراء تغلق قرب القمة. الفلتر الأول يشترط أيضاً أن تكون دورة الأسهم خلال 1–5 أيام أو عبرتها اليوم. مضاربة عالية المخاطر: طرح أسهم جديدة وإيقاف تداول وهبوط حاد واردة.<br>
+    <b>🎯 قبل الانطلاق:</b> دورة الأسهم ضمن النطاق المختار (افتراضياً 3–6 أيام)، والسهم لم ينطلق بعد (التغير أقل من 10% والحجم أقل من ضعف متوسطه)، وهدف السيولة ↑ أبعد من 8% فوق السعر. في تبويب أقل من 5$ يُشترط أيضاً أسهم حرة أقل من 20 مليون. مرتبة من الأقرب دورةً.<br>
+    <b>🚀 انفجار أسهم حرة قليلة (تبويب أقل من 5$):</b> أسهم حرة أقل من 20 مليون، وكان السهم هادئاً (يتداول ≤20% من أسهمه الحرة يومياً)، ثم تداول اليوم كل أسهمه الحرة أو 3 أضعاف حجمه، بشمعة خضراء تغلق قرب القمة. الفلتر الأول يشترط أيضاً أن تكون دورة الأسهم ضمن النطاق المختار أو عبرتها اليوم. مضاربة عالية المخاطر: طرح أسهم جديدة وإيقاف تداول وهبوط حاد واردة.<br>
     <b>دقة الإيقاع:</b> كم قاعاً سابقاً جاء داخل النافذة المتوقعة، مقارنة بالصدفة. إذا لم تتفوق على الصدفة فلا تعتمد على الزمن في هذا السهم.<br>
     التواريخ تقريبية. البيانات من Yahoo Finance وقد تتأخر أو تنقص. افتح السهم على TradingView بمؤشري BH وPTC قبل أي قرار.
   </div>
@@ -186,12 +193,16 @@ async function render(){
   try { data = await load(market); }
   catch(e){ $("#meta").textContent = "لا توجد نتائج بعد لهذا السوق. شغّل الماسح من GitHub Actions."; grid.innerHTML = ""; return; }
   const min = +$("#minScore").value, view = $("#view").value, q = $("#q").value.trim().toUpperCase();
-  const cyc5 = r => r.ftSrc !== "out" && r.ftBars != null && r.ftBars <= 5;  // الأسهم الحرة الحقيقية فقط
+  const [cA, cB] = $("#cycR").value.split("-").map(Number);
+  const cyc5 = r => r.ftSrc !== "out" && r.ftBars != null && r.ftBars >= cA && r.ftBars <= cB;  // الأسهم الحرة الحقيقية فقط
+  const isLow = $("#list").value === "low";
+  const pre = r => cyc5(r) && !r.lowBurst && r.chg < 10 && r.vr < 2 && r.up != null && r.up / r.price - 1 >= 0.08 && (!isLow || (r.ftFloat != null && r.ftFloat < 20));
   let rows = data.rows.filter(r => r.score >= min || (view === "watch" && r.watch) || (view === "soon" && r.soon) || (view === "start" && r.atStart) || (view === "startcyc" && r.atStart && cyc5(r)) || (view === "cyc" && cyc5(r)));
   if (view === "startcyc") rows = rows.filter(r => r.atStart && cyc5(r));
   if (view === "cyc") rows = rows.filter(cyc5);
   if (view === "start") rows = rows.filter(r => r.atStart).sort((a,b) => a.lowAgo - b.lowAgo || b.score - a.score);
-  if (view === "burst" || view === "burstAll") rows = data.rows.filter(r => view === "burst" ? r.burstCyc : r.lowBurst);
+  if (view === "burst" || view === "burstAll") rows = data.rows.filter(r => r.lowBurst && (view === "burstAll" || cyc5(r) || (r.ftSince != null && r.ftSince <= 1)));
+  if (view === "pre") rows = data.rows.filter(pre).sort((a,b) => a.ftBars - b.ftBars || (b.up/b.price) - (a.up/a.price));
   if (view === "soon") rows = rows.filter(r => r.soon);
   if (view === "trig") rows = rows.filter(r => r.trig);
   if (view === "watch") rows = data.rows.filter(r => r.watch);
@@ -212,7 +223,7 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   market = b.dataset.m; try { localStorage.setItem("ptc-m", market); } catch(e){}
   render();
 });
-["#minScore","#view","#sort","#list"].forEach(s => $(s).onchange = render);
+["#minScore","#view","#sort","#list","#cycR"].forEach(s => $(s).onchange = render);
 $("#q").oninput = render;
 render();
 </script>
