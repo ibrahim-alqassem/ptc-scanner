@@ -379,12 +379,12 @@ def analyze(t, d, bench, float_shares=None, float_src=None):
     order = ["3D", "5D", "10D", "20D", "52W"]
     above = [(val, nm) for val, nm in sorted((ladder[k], k) for k in ladder if ladder[k] > c[-1] * 1.001)]
     above.sort(key=lambda x: (round(x[0], 6), order.index(x[1])))  # عند التساوي: الأقصر مدة
-    trig, trig_nm = above[0] if above else (float(h[-1]), "قمة اليوم")
-    stop4, stop8 = trig * 0.96, trig * 0.92
-    nxt = [(val, nm) for val, nm in above if val > trig * 1.02]
-    t1, t1_nm = nxt[0] if nxt else ((tgt_up, "هدف السيولة") if tgt_up and tgt_up > trig * 1.02 else (None, None))
+    trig_px, trig_nm = above[0] if above else (float(h[-1]), "قمة اليوم")
+    stop4, stop8 = trig_px * 0.96, trig_px * 0.92
+    nxt = [(val, nm) for val, nm in above if val > trig_px * 1.02]
+    t1, t1_nm = nxt[0] if nxt else ((tgt_up, "هدف السيولة") if tgt_up and tgt_up > trig_px * 1.02 else (None, None))
     t2 = tgt_up if (tgt_up and t1 and tgt_up > t1 * 1.01) else None
-    rr = (t1 - trig) / (trig - stop4) if t1 else None
+    rr = (t1 - trig_px) / (trig_px - stop4) if t1 else None
     hi52 = ladder.get("52W")
     under_major = bool(hi52 and c[-1] < hi52 <= c[-1] * 1.05)
     cs = pd.Series(c)
@@ -466,7 +466,7 @@ def analyze(t, d, bench, float_shares=None, float_src=None):
         "turnToday": None if turn_today is None else round(float(turn_today)),
         "turnPrior": None if turn_prior is None else round(float(turn_prior), 1),
         "burstDays": burst_days, "lowBurst": low_burst,
-        "plan": {"trig": round(trig, 2), "trigNm": trig_nm, "stop4": round(stop4, 2), "stop8": round(stop8, 2),
+        "plan": {"trig": round(trig_px, 2), "trigNm": trig_nm, "stop4": round(stop4, 2), "stop8": round(stop8, 2),
                  "t1": None if t1 is None else round(float(t1), 2), "t1Nm": t1_nm,
                  "t2": None if t2 is None else round(float(t2), 2), "rr": None if rr is None else round(rr, 1)},
         "ladder": {k: round(val, 2) for k, val in ladder.items()},
