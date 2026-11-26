@@ -54,6 +54,10 @@ main{padding:12px 16px 40px;max-width:1100px;margin:0 auto}
 .chip.soon{background:var(--gold-bg);color:var(--gold)}
 dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;font-size:13px}
 dt{color:var(--muted)}dd{margin:0;font-variant-numeric:tabular-nums}
+.stg{display:flex;gap:4px;flex-wrap:wrap}
+.stg span{font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted)}
+.stg span.ok{background:var(--pos-bg);color:var(--pos)}
+.plan{background:var(--chip);border-radius:8px;padding:6px 8px;margin:8px 0 4px;font-size:12.5px;line-height:1.7}
 .empty{color:var(--muted);text-align:center;padding:40px 0}
 .note{color:var(--muted);font-size:12px;margin-top:24px;line-height:1.7}
 .legend{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
@@ -115,6 +119,8 @@ dt{color:var(--muted)}dd{margin:0;font-variant-numeric:tabular-nums}
     <b>دورة الأسهم:</b> التاريخ المتوقع لاكتمال تداول ما يعادل الأسهم الحرة مرة أخرى منذ بداية العد. تقريبي، ويتقدم إذا ارتفع الحجم.<br>
     <b>عند بداية عدّ الحجم:</b> السهم صنع أدنى سعر في سنة خلال آخر 3 شموع، أي أنه عند شمعة بداية العد في المؤشر. هذه قائمة مراقبة وليست إشارة شراء.<br>
     <b>الشروط الستة:</b> قرب قاع السنة (بداية عدّ الحجم) · نافذة إيقاع القيعان · نافذة فيبو الزمني · دورة الأسهم الحرة خلال 3 أيام · السعر عند دعم (فيبو، EMA، قاع سابق، سيولة) · انفجار حجم 1.5x بشمعة خضراء.<br>
+    <b>خطة الغد:</b> التفعيل عند اختراق أول مستوى فوق السعر من السلّم (أعلى 3/5/10/20 يوماً أو 52 أسبوعاً)، والوقف 4% أو 8% تحت التفعيل، والهدف المستوى التالي ثم هدف السيولة. «اختبار الاختراق» يحسب على تاريخ السهم: كم مرة لمس +4% قبل −4% خلال 10 أيام بعد إغلاق فوق أعلى 5 أيام بحجم ≥1.2x و MACD إيجابي.<br>
+    <b>المراحل:</b> قاعدة (قرب قاع السنة ≤30%) · انكماش · دورة قريبة (1–8 أيام) · اختراق بحجم · تأكيد (فوق EMA20 و MACD إيجابي).<br>
     <b>🎯 قبل الانطلاق:</b> دورة الأسهم ضمن النطاق المختار (افتراضياً 3–6 أيام)، والسهم لم ينطلق بعد (التغير أقل من 10% والحجم أقل من ضعف متوسطه)، وهدف السيولة ↑ أبعد من 8% فوق السعر. في تبويب أقل من 5$ يُشترط أيضاً أسهم حرة أقل من 20 مليون. مرتبة من الأقرب دورةً.<br>
     <b>🚀 انفجار أسهم حرة قليلة (تبويب أقل من 5$):</b> أسهم حرة أقل من 20 مليون، وكان السهم هادئاً (يتداول ≤20% من أسهمه الحرة يومياً)، ثم تداول اليوم كل أسهمه الحرة أو 3 أضعاف حجمه، بشمعة خضراء تغلق قرب القمة. الفلتر الأول يشترط أيضاً أن تكون دورة الأسهم ضمن النطاق المختار أو عبرتها اليوم. مضاربة عالية المخاطر: طرح أسهم جديدة وإيقاف تداول وهبوط حاد واردة.<br>
     <b>دقة الإيقاع:</b> كم قاعاً سابقاً جاء داخل النافذة المتوقعة، مقارنة بالصدفة. إذا لم تتفوق على الصدفة فلا تعتمد على الزمن في هذا السهم.<br>
@@ -151,6 +157,18 @@ function ftTxt(r){
   return t;
 }
 
+const STG = ["قاعدة","انكماش","دورة قريبة","اختراق بحجم","تأكيد"];
+function planHtml(r){
+  const p = r.plan; if (!p) return "";
+  const t1 = p.t1 != null ? `${fmt(p.t1)} (${p.t1Nm} ${pct(p.t1, p.trig)})` : "لا هدف قريب · قمة جديدة";
+  const lad = r.ladder ? Object.entries(r.ladder).map(([k,v]) => `${k} ${fmt(v)}`).join(" · ") : "";
+  const bo = r.boN ? `${r.boWin} من ${r.boN} (${Math.round(r.boWin*100/r.boN)}%)` : "لا حالات";
+  const boCls = r.boN >= 5 ? (r.boWin/r.boN >= 0.55 ? "up" : r.boWin/r.boN < 0.45 ? "dn" : "") : "";
+  return `<div class="plan"><b>خطة الغد:</b> تفعيل فوق <b>${fmt(p.trig)}</b> (${p.trigNm}) · وقف ${fmt(p.stop4)} (4%) / ${fmt(p.stop8)} (8%)<br>
+    الهدف ${t1}${p.t2 != null ? " ثم " + fmt(p.t2) + " (سيولة)" : ""}${p.rr != null ? " · عائد/مخاطرة " + p.rr : ""}<br>
+    <span style="color:var(--muted)">السلّم: ${lad}</span><br>
+    اختبار الاختراق (+4% قبل −4%): <span class="${boCls}">${bo}</span></div>`;
+}
 function card(r){
   const chips = [
     ["قاع السنة", r.nearLow], ["إيقاع", r.inLo], ["فيبو زمني" + (r.fibR ? " " + r.fibR : ""), r.inFib],
@@ -159,6 +177,8 @@ function card(r){
     + (r.atStart ? `<span class="chip soon">📍 عند بداية العد</span>` : "")
     + (r.soon ? `<span class="chip soon">⏳ نافذة قادمة</span>` : "")
     + (r.lowBurst ? `<span class="chip soon">🚀 انفجار${r.burstDays > 1 ? " (اليوم " + r.burstDays + ")" : " (اليوم الأول)"}</span>` : "")
+    + (r.underMajor ? `<span class="chip soon">⛰ تحت مقاومة كبرى</span>` : "")
+    + (r.emaStack ? `<span class="chip on">✔ متوسطات مرتبة</span>` : "")
     + (r.watch ? `<span class="chip soon">★ مراقبة</span>` : "");
   const dots = Array.from({length:6}, (_,i) => `<span class="dot ${i<r.score?"f":""}"></span>`).join("");
   const rhP = r.rhN ? Math.round(r.rhHit*100/r.rhN) : null;
@@ -170,6 +190,9 @@ function card(r){
     </div>
     <div class="score">${dots}<b>${r.score}/6</b></div>
     <div class="chips">${chips}</div>
+    ${r.stages ? `<div class="stg">${r.stages.map((ok,i) => `<span class="${ok?"ok":""}">${ok?"✔":"○"} ${STG[i]}</span>`).join("")}</div>
+    <div style="font-size:12px;color:var(--muted);margin:4px 0">${r.miss && r.miss.length ? "الناقص الآن: " + r.miss.join("، ") : "✔ اكتملت المراحل"}</div>` : ""}
+    ${planHtml(r)}
     <dl>
       <dt>القاع القادم</dt><dd>${r.loWin ?? "—"}${r.rhythm ? " · إيقاع ~" + r.rhythm + " شمعة" : ""}</dd>
       <dt>دورة الأسهم</dt><dd>${ftTxt(r)}</dd>
