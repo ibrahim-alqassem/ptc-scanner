@@ -371,6 +371,57 @@ def analyze(t, d, bench, float_shares=None, float_src=None):
         green_hi = c[-1] > o[-1] and c[-1] > c[-2] and rng > 0 and (h[-1] - c[-1]) / rng <= 0.3
         low_burst = bool(float_shares < LOW_FLOAT and burst_days >= 1 and turn_prior <= 20 and green_hi)
 
+    # ===== خطة الغد: سلّم المستويات + التفعيل + الوقف + الأهداف =====
+    ladder = {}
+    for nm, N in (("3D", 3), ("5D", 5), ("10D", 10), ("20D", 20), ("52W", 252)):
+        if n >= N:
+            ladder[nm] = float(h[-N:].max())
+    order = ["3D", "5D", "10D", "20D", "52W"]
+    above = [(val, nm) for val, nm in sorted((ladder[k], k) for k in ladder if ladder[k] > c[-1] * 1.001)]
+    above.sort(key=lambda x: (round(x[0], 6), order.index(x[1])))  # عند التساوي: الأقصر مدة
+    trig, trig_nm = above[0] if above else (float(h[-1]), "قمة اليوم")
+    stop4, stop8 = trig * 0.96, trig * 0.92
+    nxt = [(val, nm) for val, nm in above if val > trig * 1.02]
+    t1, t1_nm = nxt[0] if nxt else ((tgt_up, "هدف السيولة") if tgt_up and tgt_up > trig * 1.02 else (None, None))
+    t2 = tgt_up if (tgt_up and t1 and tgt_up > t1 * 1.01) else None
+    rr = (t1 - trig) / (trig - stop4) if t1 else None
+    hi52 = ladder.get("52W")
+    under_major = bool(hi52 and c[-1] < hi52 <= c[-1] * 1.05)
+    cs = pd.Series(c)
+    e6, e20, e50 = (cs.ewm(span=k, adjust=False).mean().values for k in (6, 20, 50))
+    e200v = cs.ewm(span=200, adjust=False).mean().values[-1] if n >= 200 else None
+    ema_stack = bool(e200v is not None and e6[-1] > e20[-1] > e50[-1] > e200v)
+    macd = cs.ewm(span=12, adjust=False).mean().values - cs.ewm(span=26, adjust=False).mean().values
+    msig = pd.Series(macd).ewm(span=9, adjust=False).mean().values
+    macd_pos = bool(macd[-1] > msig[-1])
+    # المراحل الخمس (نفس المؤشر)
+    brk_today = bool(n > 6 and c[-1] > h[-6:-1].max() and vr >= 1.2 and macd_pos)
+    stages = [
+        ("قاعدة", bool(c[-1] <= low52 * 1.3)),
+        ("انكماش", None),  # يُحسب بعد حساب الانكماش أدناه
+        ("دورة قريبة", bool((ft_bars is not None and 1 <= ft_bars <= 8) or (ft_since is not None and ft_since <= 1))),
+        ("اختراق بحجم", brk_today),
+        ("تأكيد", bool(c[-1] > e20[-1] and macd_pos)),
+    ]
+    # اختبار صادق لطريقة الاختراق: إغلاق فوق أعلى 5 أيام + حجم ≥1.2x + MACD إيجابي → هل لمس +4% قبل -4% خلال 10 أيام؟
+    bo_win = bo_n = 0
+    hi5 = pd.Series(h).rolling(5).max().shift(1).values
+    va20 = pd.Series(v).rolling(20).mean().shift(1).values
+    for i in range(60, n - 1):
+        if not (c[i] > hi5[i] and va20[i] > 0 and v[i] >= 1.2 * va20[i] and macd[i] > msig[i]):
+            continue
+        ent, res_ = c[i], None
+        for j in range(i + 1, min(n, i + 11)):
+            if l[j] <= ent * 0.96:
+                res_ = False
+                break
+            if h[j] >= ent * 1.04:
+                res_ = True
+                break
+        if res_ is not None:
+            bo_n += 1
+            bo_win += int(res_)
+
     # إضافات
     rs = None
     if isinstance(bench, float):  # مرجع بديل: متوسط أداء أسهم السوق نفسه
@@ -384,6 +435,7 @@ def analyze(t, d, bench, float_shares=None, float_src=None):
     tl = l[-TIGHT_LEN:].min()
     tight = (h[-TIGHT_LEN:].max() - tl) / tl * 100 if tl > 0 else None
     hit, nn, chance = rhythm_test(lo_i)
+    stages[1] = ("انكماش", bool(tight is not None and tight <= TIGHT_PCT))
 
     score = int(near_low) + int(in_lo) + int(in_fib) + int(in_ft) + int(at_sup) + int(trig)
     dt = d.index[-1]
@@ -414,6 +466,13 @@ def analyze(t, d, bench, float_shares=None, float_src=None):
         "turnToday": None if turn_today is None else round(float(turn_today)),
         "turnPrior": None if turn_prior is None else round(float(turn_prior), 1),
         "burstDays": burst_days, "lowBurst": low_burst,
+        "plan": {"trig": round(trig, 2), "trigNm": trig_nm, "stop4": round(stop4, 2), "stop8": round(stop8, 2),
+                 "t1": None if t1 is None else round(float(t1), 2), "t1Nm": t1_nm,
+                 "t2": None if t2 is None else round(float(t2), 2), "rr": None if rr is None else round(rr, 1)},
+        "ladder": {k: round(val, 2) for k, val in ladder.items()},
+        "underMajor": under_major, "emaStack": ema_stack, "macdPos": macd_pos,
+        "stages": [ok for _, ok in stages], "miss": [nm for nm, ok in stages if not ok],
+        "boWin": bo_win, "boN": bo_n,
         "rhHit": hit, "rhN": nn, "rhChance": None if chance is None else round(chance),
         "date": dt.strftime("%Y-%m-%d"),
     })
